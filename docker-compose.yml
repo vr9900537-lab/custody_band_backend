@@ -1,0 +1,69 @@
+# =====================================================================
+# CUSTODY WATCH PLATFORM - DOCKER COMPOSE CONFIGURATION
+# =====================================================================
+# Runs the complete Custody Watch Platform container:
+#  - FastAPI HTTP REST API & Swagger UI Docs (Port 8000)
+#  - Huaten C05 GPS Custody Watch Receiver (Port 9001 TCP & UDP)
+#  - Firebase Firestore & Auth integration
+#  - SQLite Database persistence
+# =====================================================================
+
+services:
+  custody-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: custody_watch_backend
+    restart: unless-stopped
+
+    # Dual port mappings:
+    # 8000     : REST API, Authentication, Dashboard & Swagger Docs (/docs)
+    # 9001/tcp : Custody Watch GPS TCP Socket (Target Public IP: 103.44.0.5:9001)
+    # 9001/udp : Custody Watch GPS UDP Socket (Fallback)
+    ports:
+      - "8000:8000"
+      - "9001:9001/tcp"
+      - "9001:9001/udp"
+
+    # Load environment variables from backend/.env
+    env_file:
+      - ./backend/.env
+
+    # Override / enforce container-level environment settings
+    environment:
+      - PYTHONUNBUFFERED=1
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - TCP_HOST=0.0.0.0
+      - TCP_PORT=9001
+      - PUBLIC_SERVER_IP=103.44.0.5
+      - FIREBASE_PROJECT_ID=update-custody-band-back-1c169
+      - FIREBASE_CREDENTIALS_PATH=/app/secrets/firebase_service_account.json
+      - ADMIN_EMAIL=awsdevopskumar2026@gmail.com
+      - ADMIN_NAME=aditya
+      - ADMIN_ROLE=admin
+
+    # Mounts for data persistence across container rebuilds
+    volumes:
+      # SQLite local database persistence
+      - ./backend/custody_watch.db:/app/custody_watch.db
+      # Persistent logs directory (TCP raw hex frames & app logs)
+      - ./backend/logs:/app/logs
+      # Firebase Service Account key (mounted read-only for security)
+      - ./backend/secrets:/app/secrets:ro
+
+    # Health check verifying the FastAPI service responds with 200 OK
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    networks:
+      - custody_network
+
+networks:
+  custody_network:
+    driver: bridge
+
